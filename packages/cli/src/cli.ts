@@ -4,6 +4,7 @@ import {
   DocumentService,
   WorkflowService,
   AuditService,
+  resolveStoragePaths,
   type Actor,
   type Clock,
   type IdGenerator,
@@ -40,7 +41,9 @@ export async function runCli(
   const command = args[0] || 'help';
   const subCommand = args[1];
 
-  const dbPath = options?.dbPath ?? (process.env.DATABASE_URL?.replace(/^file:/, '') || './data/brew.db');
+  // Explicit --db-path / option wins, otherwise resolve the persistent
+  // storage root (BREW_STORAGE_ROOT → ~/storage → ./storage).
+  const dbPath = options?.dbPath ?? resolveStoragePaths().dbPath;
   const db = createDatabaseConnection({ filePath: dbPath });
 
   const docRepo = new SQLiteDocumentRepository(db);

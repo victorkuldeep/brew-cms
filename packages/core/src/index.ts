@@ -1,5 +1,6 @@
 export * from './domain/types.js';
 export * from './domain/errors.js';
+export * from './storage-paths.js';
 export * from './ports/repositories.js';
 export * from './ports/services.js';
 export * from './application/document-service.js';

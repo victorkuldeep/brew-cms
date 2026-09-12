@@ -1,5 +1,6 @@
 import type { EmbeddingProvider } from '../domain/ports.js';
 import { EmbeddingProviderUnavailableError } from '../domain/errors.js';
+import { resolveStoragePaths } from '@brew-cms/core';
 
 export interface TransformersJsProviderOptions {
   modelId?: string;
@@ -7,6 +8,14 @@ export interface TransformersJsProviderOptions {
   dimensions?: number;
   batchSize?: number;
   quantized?: boolean;
+  /**
+   * Disk cache for downloaded model weights.
+   * Defaults to the persistent models dir (`<storage>/models/transformers`),
+   * overridable via `BREW_MODEL_CACHE_DIR` / `MODEL_CACHE_DIR`.
+   * Must be persistent across deploys — otherwise weights re-download
+   * (~23MB quantized) on every restart.
+   */
+  cacheDir?: string;
 }
 
 export class TransformersJsEmbeddingProvider implements EmbeddingProvider {
@@ -15,6 +24,7 @@ export class TransformersJsEmbeddingProvider implements EmbeddingProvider {
   public readonly dimensions: number;
   private readonly batchSize: number;
   private readonly quantized: boolean;
+  private readonly cacheDir?: string;
 
   private extractorPromise: Promise<any> | null = null;
 
@@ -24,6 +34,7 @@ export class TransformersJsEmbeddingProvider implements EmbeddingProvider {
     this.dimensions = options.dimensions ?? 384;
     this.batchSize = options.batchSize ?? 4;
     this.quantized = options.quantized ?? true;
+    this.cacheDir = options.cacheDir;
   }
 
   /**
@@ -33,7 +44,23 @@ export class TransformersJsEmbeddingProvider implements EmbeddingProvider {
     if (!this.extractorPromise) {
       this.extractorPromise = (async () => {
         try {
-          const { pipeline } = await import('@xenova/transformers');
+          const { pipeline, env } = await import('@xenova/transformers');
+
+          // WASM backend — works everywhere without native binaries.
+          env.backends.onnx.wasm.numThreads = 1;
+
+          const cacheDir =
+            this.cacheDir ??
+            process.env.BREW_MODEL_CACHE_DIR ??
+            process.env.MODEL_CACHE_DIR ??
+            resolveStoragePaths().modelsDir;
+          env.cacheDir = cacheDir;
+          env.allowRemoteModels = true;
+          env.allowLocalModels = true;
+
+          // eslint-disable-next-line no-console
+          console.log(`[brew-cms:intelligence] model cache: ${cacheDir}`);
+
           return await pipeline('feature-extraction', this.modelId, {
             quantized: this.quantized,
           });

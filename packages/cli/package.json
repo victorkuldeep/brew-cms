@@ -1,6 +1,6 @@
 {
   "name": "@brew-cms/cli",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Developer CLI for BrewCMS operations and content workflows",
   "license": "Apache-2.0",
   "type": "module",

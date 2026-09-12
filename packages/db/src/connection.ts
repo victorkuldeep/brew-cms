@@ -2,25 +2,58 @@ import { DatabaseSync } from 'node:sqlite';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 
+export type SqliteJournalMode = 'DELETE' | 'TRUNCATE' | 'PERSIST' | 'MEMORY' | 'WAL' | 'OFF';
+
 export interface DatabaseConfig {
   filePath?: string; // e.g. "./data/brew.db" or ":memory:"
+  /**
+   * SQLite journal mode. Defaults to `DELETE`.
+   *
+   * Rationale: on shared/ephemeral Node.js hosts, leftover `-wal`/`-shm`
+   * files from a previous deploy or crash block clean startup and surface
+   * as gateway timeouts. `DELETE` keeps the database self-contained in a
+   * single file. Override with `BREW_SQLITE_JOURNAL_MODE=WAL` when the host
+   * guarantees a persistent, single-writer volume.
+   */
+  journalMode?: SqliteJournalMode;
 }
 
 export function createDatabaseConnection(config: DatabaseConfig = {}): DatabaseSync {
   const targetPath = config.filePath ?? ':memory:';
+  const journalMode: SqliteJournalMode =
+    config.journalMode ??
+    (process.env.BREW_SQLITE_JOURNAL_MODE as SqliteJournalMode | undefined) ??
+    'DELETE';
 
   if (targetPath !== ':memory:') {
     const dir = path.dirname(path.resolve(targetPath));
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
+
+    // Drop orphaned WAL artifacts from a previous WAL-mode session or crash
+    // before opening in DELETE mode — they would otherwise block startup.
+    if (journalMode === 'DELETE') {
+      for (const suffix of ['-wal', '-shm']) {
+        try {
+          if (fs.existsSync(targetPath + suffix)) {
+            fs.unlinkSync(targetPath + suffix);
+          }
+          // eslint-disable-next-line no-empty
+        } catch {}
+      }
+    }
   }
 
   const db = new DatabaseSync(targetPath);
 
-  // Enable WAL mode & foreign keys for performance and data integrity
   if (targetPath !== ':memory:') {
-    db.exec('PRAGMA journal_mode = WAL;');
+    db.exec(`PRAGMA journal_mode = ${journalMode};`);
+    // Fold any leftover WAL content back into the main database file.
+    try {
+      db.exec('PRAGMA wal_checkpoint(TRUNCATE);');
+      // eslint-disable-next-line no-empty
+    } catch {}
   }
   db.exec('PRAGMA busy_timeout = 5000;');
   db.exec('PRAGMA foreign_keys = ON;');
