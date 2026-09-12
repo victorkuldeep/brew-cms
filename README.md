@@ -42,6 +42,18 @@ WordPress made publishing accessible. Headless CMS platforms (Sanity, Contentful
 
 ---
 
+## 📖 Comprehensive Documentation
+
+Deep-dive documentation guides are available in the [`docs/`](./docs) directory:
+
+* 📐 [**Systems Architecture & Topology**](./docs/architecture.md) — Pure Domain Kernel, Deterministic Content IR, In-Process SQLite WAL.
+* 🚀 [**Getting Started Guide**](./docs/getting-started.md) — Embedded integration into Next.js 15, container setup, route handlers.
+* 🤖 [**AI Agents & Model Context Protocol (MCP)**](./docs/mcp-server.md) — Bounded agent tools, Claude Desktop / Cursor setup, human approval gates.
+* 📡 [**REST API Reference**](./docs/api-reference.md) — Endpoints for documents, media uploads, taxonomy, and agent proposals.
+* ✍️ [**Studio Editorial Guide**](./docs/studio-guide.md) — Publishing lifecycles, Markdown editor, immutable revisions, and visual diffs.
+
+---
+
 ## Two Operating Modes
 
 BrewCMS is uniquely engineered to run in **two flexible deployment topologies**:
