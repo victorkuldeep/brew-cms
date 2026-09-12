@@ -1,6 +1,6 @@
 {
   "name": "@brew-cms/api",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "REST API router, OpenAPI spec, idempotency, and request validation for BrewCMS",
   "license": "Apache-2.0",
   "type": "module",

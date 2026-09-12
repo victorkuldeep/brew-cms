@@ -1,6 +1,6 @@
 {
   "name": "@brew-cms/core",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Pure domain core and application services for BrewCMS",
   "license": "Apache-2.0",
   "type": "module",

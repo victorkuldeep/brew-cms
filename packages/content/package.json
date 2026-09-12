@@ -1,6 +1,6 @@
 {
   "name": "@brew-cms/content",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Deterministic Content IR, Markdown compiler, and rendering engine for BrewCMS",
   "license": "Apache-2.0",
   "type": "module",
