@@ -114,7 +114,7 @@ export type ContentNode = z.infer<typeof ContentNodeSchema>;
 
 export const ContentIRSchema = z.object({
   version: z.string(), // e.g. "1.0.0"
-  frontmatter: z.record(z.unknown()),
+  frontmatter: z.record(z.string(), z.unknown()),
   nodes: z.array(ContentNodeSchema),
 });
 

@@ -6,7 +6,7 @@ export const CreateDocumentRequestSchema = z.object({
   title: z.string().min(1),
   excerpt: z.string().optional().nullable(),
   sourceMarkdown: z.string(),
-  frontmatter: z.record(z.unknown()).optional(),
+  frontmatter: z.record(z.string(), z.unknown()).optional(),
   seo: z
     .object({
       metaTitle: z.string().optional(),
@@ -23,7 +23,7 @@ export const UpdateDocumentRequestSchema = z.object({
   slug: z.string().optional(),
   excerpt: z.string().optional().nullable(),
   sourceMarkdown: z.string().optional(),
-  frontmatter: z.record(z.unknown()).optional(),
+  frontmatter: z.record(z.string(), z.unknown()).optional(),
   seo: z
     .object({
       metaTitle: z.string().optional(),
