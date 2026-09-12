@@ -3,11 +3,11 @@
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
 [![Next.js 15](https://img.shields.io/badge/Next.js-15%20App%20Router-black.svg)](https://nextjs.org/)
 [![Node.js 22](https://img.shields.io/badge/Node.js-22%20LTS-green.svg)](https://nodejs.org/)
-[![SQLite Native](https://img.shields.io/badge/Storage-node%3Asqlite%20WAL-blue.svg)](https://nodejs.org/api/sqlite.html)
+[![Pluggable Storage](https://img.shields.io/badge/Storage-SQLite%20·%20PostgreSQL%20·%20MySQL-blue.svg)](docs/architecture.md)
 [![Model Context Protocol](https://img.shields.io/badge/AI-MCP%20Ready-purple.svg)](https://modelcontextprotocol.io/)
 
-> **An open-source, agent-ready content operating system for modern web applications.**  
-> Markdown-first. Structured at the core. Human-governed. AI-operable.
+> **An open-source, database-agnostic Content Control Plane for modern web applications.**  
+> *Immutable revisions · governed publishing · agent-ready operations.*
 
 ---
 
@@ -15,7 +15,7 @@
 
 BrewCMS is not a website builder, an AI chatbot, or a WordPress clone.
 
-WordPress made publishing accessible. Headless CMS platforms (Sanity, Contentful, Strapi) separated content from presentation but introduced SaaS lock-in, vendor bills, and latency. **BrewCMS takes the next architectural step:** content becomes a governed, versioned, machine-operable control plane with local-first storage.
+WordPress made publishing accessible. Headless CMS platforms (Sanity, Contentful, Strapi) separated content from presentation but introduced SaaS lock-in, vendor bills, and latency. **BrewCMS takes the next architectural step:** content becomes a governed, versioned, database-agnostic control plane with local-first and enterprise storage adapters.
 
 ```
        Apps (Next.js Studio, Custom Frontends)
@@ -28,12 +28,12 @@ WordPress made publishing accessible. Headless CMS platforms (Sanity, Contentful
                          ↓
                     Domain Ports
                          ↓
-        Adapters (SQLite, Media, Search, Events, Auth)
+        Adapters (SQLite, Postgres, MySQL, Media, Search, Events)
 ```
 
 ### Architectural Pillars
 
-* **Local-First SQLite Engine**: Powered by Node.js 22 native `node:sqlite` with WAL mode enabled. Zero external database servers, zero compilation toolchains (`node-gyp`), and ultra-low RAM footprint (~15MB cache).
+* **Pluggable Storage Architecture**: Hexagonal storage port decoupled from domain logic. Supports zero-dependency in-process SQLite (Node.js 22 native `node:sqlite` WAL mode) for <0.2ms local query latency and zero daemon overhead, alongside PostgreSQL and MySQL adapters for distributed clusters.
 * **Deterministic Content Kernel**: Markdown + Frontmatter parsed into versioned Content Intermediate Representation (IR). Cryptographic content hashing (`SHA-256`) ensures reproducibility.
 * **Immutable Revisions**: Historical revisions are never mutated. Published documents point to explicit revision snapshots.
 * **Explicit Editorial Workflow**: Controlled state machine: `DRAFT` → `IN_REVIEW` → `APPROVED` → `SCHEDULED` / `PUBLISHED` → `ARCHIVED`.
