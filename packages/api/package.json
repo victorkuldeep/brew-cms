@@ -1,0 +1,28 @@
+{
+  "name": "@brew-cms/api",
+  "version": "0.1.0",
+  "description": "REST API router, OpenAPI spec, idempotency, and request validation for BrewCMS",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "rimraf dist"
+  },
+  "dependencies": {
+    "@brew-cms/content": "workspace:*",
+    "@brew-cms/core": "workspace:*",
+    "@brew-cms/policy": "workspace:*",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@brew-cms/db": "workspace:*"
+  }
+}

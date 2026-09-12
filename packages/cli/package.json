@@ -1,0 +1,30 @@
+{
+  "name": "@brew-cms/cli",
+  "version": "0.1.0",
+  "description": "Developer CLI for BrewCMS operations and content workflows",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "brew": "./dist/bin.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "rimraf dist"
+  },
+  "dependencies": {
+    "@brew-cms/content": "workspace:*",
+    "@brew-cms/core": "workspace:*",
+    "@brew-cms/db": "workspace:*",
+    "@brew-cms/media": "workspace:*",
+    "@brew-cms/policy": "workspace:*",
+    "@brew-cms/search": "workspace:*"
+  }
+}

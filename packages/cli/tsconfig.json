@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist"
+  },
+  "references": [
+    { "path": "../core" },
+    { "path": "../content" },
+    { "path": "../policy" },
+    { "path": "../db" },
+    { "path": "../media" },
+    { "path": "../search" }
+  ],
+  "include": ["src/**/*"]
+}

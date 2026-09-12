@@ -1,0 +1,22 @@
+{
+  "name": "@brew-cms/client",
+  "version": "0.1.0",
+  "description": "Type-safe Next.js and TypeScript client SDK for BrewCMS",
+  "type": "module",
+  "license": "Apache-2.0",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "rimraf dist tsconfig.tsbuildinfo",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@brew-cms/content": "workspace:*",
+    "@brew-cms/core": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

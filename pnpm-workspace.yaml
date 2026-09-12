@@ -1,0 +1,8 @@
+packages:
+  - 'apps/*'
+  - 'packages/*'
+  - 'examples/*'
+allowBuilds:
+  better-sqlite3: false
+  esbuild: true
+

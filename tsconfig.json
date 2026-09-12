@@ -1,0 +1,18 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./packages/core" },
+    { "path": "./packages/content" },
+    { "path": "./packages/policy" },
+    { "path": "./packages/events" },
+    { "path": "./packages/auth" },
+    { "path": "./packages/media" },
+    { "path": "./packages/search" },
+    { "path": "./packages/db" },
+    { "path": "./packages/api" },
+    { "path": "./packages/mcp" },
+    { "path": "./packages/cli" },
+    { "path": "./packages/ui" },
+    { "path": "./packages/client" }
+  ]
+}
