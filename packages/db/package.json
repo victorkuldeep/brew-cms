@@ -1,6 +1,6 @@
 {
   "name": "@brew-cms/db",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Drizzle ORM schemas and SQLite repository adapters for BrewCMS",
   "license": "Apache-2.0",
   "type": "module",
@@ -9,7 +9,8 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
     }
   },
   "files": ["dist", "LICENSE"],
