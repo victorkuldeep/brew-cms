@@ -30,30 +30,38 @@ export function createDatabaseConnection(config: DatabaseConfig = {}): DatabaseS
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
-
-    // Drop orphaned WAL artifacts from a previous WAL-mode session or crash
-    // before opening in DELETE mode — they would otherwise block startup.
-    if (journalMode === 'DELETE') {
-      for (const suffix of ['-wal', '-shm']) {
-        try {
-          if (fs.existsSync(targetPath + suffix)) {
-            fs.unlinkSync(targetPath + suffix);
-          }
-          // eslint-disable-next-line no-empty
-        } catch {}
-      }
-    }
   }
 
   const db = new DatabaseSync(targetPath);
 
   if (targetPath !== ':memory:') {
+    // Recover WAL content left by a previous WAL-mode session (parallel
+    // build workers, crash, or journal-mode switch) BEFORE enforcing the
+    // configured mode, so no committed data is stranded in a stale -wal.
+    if (fs.existsSync(targetPath + '-wal')) {
+      try {
+        db.exec('PRAGMA journal_mode = WAL;');
+        try {
+          db.exec('PRAGMA wal_checkpoint(TRUNCATE);');
+        } catch {
+          // Another live connection may block TRUNCATE — take what we can get
+          db.exec('PRAGMA wal_checkpoint(PASSIVE);');
+        }
+        // eslint-disable-next-line no-empty
+      } catch {}
+    }
     db.exec(`PRAGMA journal_mode = ${journalMode};`);
-    // Fold any leftover WAL content back into the main database file.
-    try {
-      db.exec('PRAGMA wal_checkpoint(TRUNCATE);');
-      // eslint-disable-next-line no-empty
-    } catch {}
+    // The -shm file is pure shared-memory state; meaningless across restarts.
+    if (journalMode === 'DELETE') {
+      try {
+        if (fs.existsSync(targetPath + '-shm')) {
+          fs.unlinkSync(targetPath + '-shm');
+        }
+        // eslint-disable-next-line no-empty
+      } catch {}
+    }
+    // eslint-disable-next-line no-console
+    console.log(`[brew-cms:db] ${targetPath} (journal_mode=${journalMode})`);
   }
   db.exec('PRAGMA busy_timeout = 5000;');
   db.exec('PRAGMA foreign_keys = ON;');

@@ -37,6 +37,22 @@ export interface StoragePathOptions {
 }
 
 /**
+ * Default sqlite file. Backward-compat bridge: when no persistent root is
+ * configured (local development) and a `./data/brew.db` already exists from
+ * before the storage-root migration, keep using it instead of silently
+ * switching to a fresh empty database.
+ */
+function defaultDbPath(rootIsPersistent: boolean, dataDir: string): string {
+  if (!rootIsPersistent) {
+    const legacy = path.resolve(process.cwd(), 'data', 'brew.db');
+    if (fs.existsSync(legacy)) {
+      return legacy;
+    }
+  }
+  return path.join(dataDir, 'brew.db');
+}
+
+/**
  * Returns the sqlite file path from the environment, or `undefined` when
  * the env points at a remote DSN (e.g. `mysql://...`) instead of a file.
  */
@@ -52,13 +68,16 @@ function dbPathFromEnv(): string | undefined {
 }
 
 export function resolveStoragePaths(options: StoragePathOptions = {}): StoragePaths {
-  let root = options.root ?? process.env.BREW_STORAGE_ROOT ?? process.env.STORAGE_ROOT;
+  const explicitRoot = options.root ?? process.env.BREW_STORAGE_ROOT ?? process.env.STORAGE_ROOT;
+  let root = explicitRoot;
+  let rootIsPersistent = Boolean(explicitRoot);
 
   if (!root) {
     // `os.homedir()` is stable across deploys; `process.cwd()` is not.
     const hostingerRoot = path.join(os.homedir(), 'storage');
     if (fs.existsSync(hostingerRoot)) {
       root = hostingerRoot;
+      rootIsPersistent = true;
     } else {
       const candidates = [
         path.resolve(process.cwd(), 'storage'),
@@ -74,7 +93,7 @@ export function resolveStoragePaths(options: StoragePathOptions = {}): StoragePa
     process.env.BREW_MEDIA_DIR ??
     process.env.MEDIA_UPLOAD_DIR ??
     path.join(root, 'media');
-  const dbPath = options.dbPath ?? dbPathFromEnv() ?? path.join(dataDir, 'brew.db');
+  const dbPath = options.dbPath ?? dbPathFromEnv() ?? defaultDbPath(rootIsPersistent, dataDir);
   const modelsDir =
     options.modelsDir ??
     process.env.BREW_MODEL_CACHE_DIR ??

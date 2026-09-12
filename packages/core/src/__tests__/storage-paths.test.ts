@@ -1,8 +1,15 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import { resolveStoragePaths } from '../storage-paths.js';
+
+// Hermetic home dir: the legacy-db tests must not depend on whether the
+// machine running them has a ~/storage directory.
+vi.mock('node:os', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:os')>();
+  return { ...actual, homedir: () => path.join(actual.tmpdir(), 'brew-nonexistent-home') };
+});
 
 const TEST_ROOT = path.join(os.tmpdir(), `brew-cms-storage-test-${process.pid}`);
 
@@ -59,5 +66,32 @@ describe('resolveStoragePaths', () => {
 
     process.env.DATABASE_URL = 'mysql://user:pass@localhost:3306/brew';
     expect(resolveStoragePaths().dbPath).toBe(path.join(TEST_ROOT, 'data', 'brew.db'));
+  });
+
+  it('keeps a pre-existing ./data/brew.db when no persistent root is configured', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'brew-legacy-'));
+    fs.mkdirSync(path.join(tmp, 'data'), { recursive: true });
+    const legacyDb = path.join(tmp, 'data', 'brew.db');
+    fs.writeFileSync(legacyDb, '');
+    const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmp);
+    try {
+      const paths = resolveStoragePaths();
+      expect(paths.dbPath).toBe(legacyDb);
+    } finally {
+      cwdSpy.mockRestore();
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('defaults to <cwd>/storage/data/brew.db when no legacy db exists', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'brew-fresh-'));
+    const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tmp);
+    try {
+      const paths = resolveStoragePaths();
+      expect(paths.dbPath).toBe(path.join(tmp, 'storage', 'data', 'brew.db'));
+    } finally {
+      cwdSpy.mockRestore();
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
   });
 });
