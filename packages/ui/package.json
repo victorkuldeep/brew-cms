@@ -16,8 +16,10 @@
       "import": "./dist/tokens.js"
     }
   },
+  "files": ["dist", "LICENSE"],
   "scripts": {
     "build": "tsc -b",
+    "prepublishOnly": "tsc -b",
     "clean": "rimraf dist"
   },
   "dependencies": {

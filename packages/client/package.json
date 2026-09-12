@@ -6,8 +6,10 @@
   "license": "Apache-2.0",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "files": ["dist", "LICENSE"],
   "scripts": {
     "build": "tsc -b",
+    "prepublishOnly": "tsc -b",
     "clean": "rimraf dist tsconfig.tsbuildinfo",
     "test": "vitest run"
   },
