@@ -1,13 +1,15 @@
 # BrewCMS
 
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
+[![npm: @brew-cms/core](https://img.shields.io/npm/v/@brew-cms/core?color=crimson&label=%40brew-cms%2Fcore)](https://www.npmjs.com/package/@brew-cms/core)
+[![npm: @brew-cms/intelligence](https://img.shields.io/npm/v/@brew-cms/intelligence?color=purple&label=%40brew-cms%2Fintelligence)](https://www.npmjs.com/package/@brew-cms/intelligence)
 [![Next.js 15](https://img.shields.io/badge/Next.js-15%20App%20Router-black.svg)](https://nextjs.org/)
 [![Node.js 22](https://img.shields.io/badge/Node.js-22%20LTS-green.svg)](https://nodejs.org/)
-[![Pluggable Storage](https://img.shields.io/badge/Storage-SQLite%20·%20PostgreSQL%20·%20MySQL-blue.svg)](docs/architecture.md)
+[![Pluggable Storage](https://img.shields.io/badge/Storage-SQLite%20·%20PostgreSQL%20·%20MySQL%20·%20MariaDB%20VECTOR-blue.svg)](docs/architecture.md)
 [![Model Context Protocol](https://img.shields.io/badge/AI-MCP%20Ready-purple.svg)](https://modelcontextprotocol.io/)
 
 > **An open-source, database-agnostic Content Control Plane for modern web applications.**  
-> *Immutable revisions · governed publishing · agent-ready operations.*
+> *Immutable revisions · governed publishing · agent-ready operations · vector intelligence.*
 
 ---
 
@@ -122,6 +124,7 @@ Open [http://localhost:3001](http://localhost:3001) in your browser:
 | Package | Path | Description |
 | :--- | :--- | :--- |
 | **`@brew-cms/core`** | [`packages/core`](packages/core) | Pure domain entities, ports, and application services (`DocumentService`, `WorkflowService`, etc.). Zero dependencies. |
+| **`@brew-cms/intelligence`** | [`packages/intelligence`](packages/intelligence) | Deterministic chunking, local WASM vector embeddings (`bge-small-en-v1.5`), MariaDB 11.8+ `VECTOR(384)` index adapter, and hybrid retrieval. |
 | **`@brew-cms/db`** | [`packages/db`](packages/db) | Drizzle schemas and native `node:sqlite` repository implementations with WAL mode. |
 | **`@brew-cms/content`** | [`packages/content`](packages/content) | Content IR, AST parser, Markdown compiler, SHA-256 hasher, reading time calculator. |
 | **`@brew-cms/policy`** | [`packages/policy`](packages/policy) | RBAC and AI agent governance policy engine (`ALLOW`, `DENY`, `REQUIRE_APPROVAL`). |
