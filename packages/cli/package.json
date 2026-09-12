@@ -23,6 +23,7 @@
     "@brew-cms/content": "workspace:*",
     "@brew-cms/core": "workspace:*",
     "@brew-cms/db": "workspace:*",
+    "@brew-cms/intelligence": "workspace:*",
     "@brew-cms/media": "workspace:*",
     "@brew-cms/policy": "workspace:*",
     "@brew-cms/search": "workspace:*"

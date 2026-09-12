@@ -10,6 +10,12 @@ import type {
   MediaAssetRepository,
   AgentRepository,
 } from '@brew-cms/core';
+import type {
+  SourceRegistry,
+  IndexingService,
+  HybridRetrievalService,
+  CanonicalSourceResolver,
+} from '@brew-cms/intelligence';
 import { compileContent } from '@brew-cms/content';
 import { formatErrorResponse } from './errors.js';
 import { InMemoryIdempotencyStore } from './idempotency.js';
@@ -49,6 +55,10 @@ export interface ApiContext {
   mediaRepo?: MediaAssetRepository;
   agentRepo?: AgentRepository;
   idempotencyStore?: InMemoryIdempotencyStore;
+  sourceRegistry?: SourceRegistry;
+  indexingService?: IndexingService;
+  retrievalService?: HybridRetrievalService;
+  canonicalResolver?: CanonicalSourceResolver;
 }
 
 export async function handleApiRequest(
@@ -405,6 +415,115 @@ async function dispatchRoute(req: ApiRequest, ctx: ApiContext): Promise<ApiRespo
     const runId = rejectRunMatch[1];
     const res = await ctx.agentService.rejectActionRun(actor, runId, (req.body as any)?.reason);
     return { status: 200, body: res };
+  }
+
+  // Intelligence: Status / Sources
+  if (urlPath === '/api/v1/intelligence/status' && method === 'GET') {
+    const registry = ctx.sourceRegistry ?? ctx.indexingService?.registry;
+    return {
+      status: 200,
+      body: {
+        status: 'operational',
+        hasIndexingService: Boolean(ctx.indexingService),
+        hasRetrievalService: Boolean(ctx.retrievalService),
+        hasCanonicalResolver: Boolean(ctx.canonicalResolver),
+        sources: registry
+          ? registry.list().map((s) => ({
+              id: s.sourceId,
+              capabilities: s.capabilities,
+            }))
+          : [],
+      },
+    };
+  }
+
+  // Intelligence: Hybrid Retrieval
+  if (urlPath === '/api/v1/intelligence/search' && method === 'GET') {
+    if (!ctx.retrievalService) {
+      return {
+        status: 503,
+        body: {
+          error: {
+            code: 'INTELLIGENCE_UNAVAILABLE',
+            message: 'Retrieval service is not configured.',
+          },
+        },
+      };
+    }
+    const q = req.query?.q;
+    if (!q || typeof q !== 'string') {
+      return {
+        status: 400,
+        body: {
+          error: {
+            code: 'INVALID_QUERY',
+            message: "Query parameter 'q' is required.",
+          },
+        },
+      };
+    }
+    const limit = req.query?.limit ? Number(req.query.limit) : 10;
+    const minScore = req.query?.minScore ? Number(req.query.minScore) : undefined;
+    const sourceId = req.query?.sourceId;
+
+    const results = await ctx.retrievalService.search({
+      query: q,
+      limit,
+      minScore,
+      sourceId,
+    });
+
+    const shouldResolve = req.query?.resolve === 'true' && ctx.canonicalResolver;
+    if (shouldResolve && ctx.canonicalResolver) {
+      const resolved = await ctx.canonicalResolver.resolveMany(results);
+      return {
+        status: 200,
+        body: {
+          query: q,
+          total: results.length,
+          items: resolved.map((r) => ({
+            reference: r.reference,
+            canonical: r.content,
+            error: r.error,
+          })),
+        },
+      };
+    }
+
+    return {
+      status: 200,
+      body: {
+        query: q,
+        total: results.length,
+        items: results,
+      },
+    };
+  }
+
+  // Intelligence: Indexing
+  if (urlPath === '/api/v1/intelligence/index' && method === 'POST') {
+    if (!ctx.indexingService) {
+      return {
+        status: 503,
+        body: {
+          error: {
+            code: 'INTELLIGENCE_UNAVAILABLE',
+            message: 'Indexing service is not configured.',
+          },
+        },
+      };
+    }
+    const body = (req.body || {}) as { sourceId?: string; contentId?: string; revisionId?: string };
+    if (body.sourceId && body.contentId) {
+      const result = await ctx.indexingService.indexDocument(body.sourceId, body.contentId, body.revisionId);
+      return { status: 200, body: { success: true, result } };
+    } else if (body.sourceId) {
+      const summary = await ctx.indexingService.syncSource(body.sourceId);
+      return { status: 200, body: { success: true, summary } };
+    } else {
+      const summaries = await ctx.indexingService.syncAll();
+      return { status: 200, body: { success: true, summaries } };
+    }
   }
 
   return {

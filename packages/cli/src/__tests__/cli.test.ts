@@ -52,4 +52,47 @@ describe('BrewCMS Developer CLI', () => {
     expect(listRes.output).toContain('cli-article');
     expect(listRes.output).toContain('CLI Powered Article');
   });
+
+  it('runs intelligence status, index, and search commands', async () => {
+    // 1. Init
+    await runCli(['init'], { dbPath: testDb });
+
+    // 2. Intelligence status
+    const statusRes = await runCli(['intelligence', 'status'], { dbPath: testDb });
+    expect(statusRes.exitCode).toBe(0);
+    expect(statusRes.output).toContain('BrewCMS Semantic Intelligence Status:');
+    expect(statusRes.output).toContain('Embedding Provider:');
+    expect(statusRes.output).toContain('brew-sqlite');
+
+    // 3. Create and publish an article
+    const createRes = await runCli(
+      [
+        'content',
+        'create',
+        'Federated Content Architecture',
+        'federated-content-arch',
+        '# Federated Content Architecture\n\nDecoupled semantic retrieval without content duplication.',
+      ],
+      { dbPath: testDb }
+    );
+    expect(createRes.exitCode).toBe(0);
+    const docIdMatch = createRes.output.match(/ID:\s+(doc_[^\s]+)/);
+    expect(docIdMatch).not.toBeNull();
+    const docId = docIdMatch![1];
+
+    const pubRes = await runCli(['content', 'publish', docId], { dbPath: testDb });
+    expect(pubRes.exitCode).toBe(0);
+
+    // 4. Index source
+    const indexRes = await runCli(['intelligence', 'index'], { dbPath: testDb });
+    expect(indexRes.exitCode).toBe(0);
+    expect(indexRes.output).toContain('Intelligence Synchronization Completed');
+    expect(indexRes.output).toContain('indexed=');
+
+    // 5. Search
+    const searchRes = await runCli(['intelligence', 'search', 'federated architecture'], { dbPath: testDb });
+    expect(searchRes.exitCode).toBe(0);
+    expect(searchRes.output).toContain('Semantic Search Results for: "federated architecture"');
+    expect(searchRes.output).toContain(docId);
+  });
 });

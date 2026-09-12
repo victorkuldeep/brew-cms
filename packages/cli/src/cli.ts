@@ -19,6 +19,14 @@ import {
   SQLiteAgentRepository,
   SQLiteMediaAssetRepository,
 } from '@brew-cms/db';
+import {
+  DefaultSourceRegistry,
+  DeterministicMockEmbeddingProvider,
+  SQLiteSemanticIndexAdapter,
+  BrewCmsSqliteSourceAdapter,
+  IndexingService,
+  HybridRetrievalService,
+} from '@brew-cms/intelligence';
 
 export interface CliOptions {
   dbPath?: string;
@@ -185,6 +193,75 @@ export async function runCli(
         return { exitCode: 1, output: `Unknown audit command: '${subCommand}'` };
       }
 
+      case 'intelligence': {
+        const registry = new DefaultSourceRegistry();
+        const brewSource = new BrewCmsSqliteSourceAdapter(docRepo, revRepo, 'brew-sqlite');
+        registry.register(brewSource);
+
+        const embeddingProvider = new DeterministicMockEmbeddingProvider();
+        const semanticIndex = new SQLiteSemanticIndexAdapter(db);
+        const indexingService = new IndexingService(registry, embeddingProvider, semanticIndex);
+        const retrievalService = new HybridRetrievalService(embeddingProvider, semanticIndex);
+
+        if (subCommand === 'status') {
+          const sources = registry.list();
+          const lines = [
+            'BrewCMS Semantic Intelligence Status:',
+            `  Embedding Provider: ${embeddingProvider.modelId} (v${embeddingProvider.modelVersion}, ${embeddingProvider.dimensions}d)`,
+            `  Semantic Index: Native SQLite BLOB (semantic_projections & semantic_chunks)`,
+            `  Registered Sources (${sources.length}):`,
+            ...sources.map(
+              (s) => `    - [${s.sourceId}] (Revisions: ${s.capabilities.supportsRevisions}, Subscriptions: ${s.capabilities.supportsSubscriptions})`
+            ),
+          ];
+          return { exitCode: 0, output: lines.join('\n') };
+        }
+
+        if (subCommand === 'index') {
+          const targetSource = args[2];
+          if (targetSource) {
+            const res = await indexingService.syncSource(targetSource);
+            return {
+              exitCode: 0,
+              output: `Indexed source '${targetSource}': total=${res.total}, indexed=${res.indexed}, skipped=${res.skipped}, failed=${res.failed}`,
+            };
+          }
+
+          const results = await indexingService.syncAll();
+          const lines = [
+            `Intelligence Synchronization Completed across ${results.length} source(s):`,
+            ...results.map(
+              (r) => `  - [${r.sourceId}]: total=${r.total}, indexed=${r.indexed}, skipped=${r.skipped}, failed=${r.failed}`
+            ),
+          ];
+          return { exitCode: 0, output: lines.join('\n') };
+        }
+
+        if (subCommand === 'search') {
+          const query = args[2];
+          if (!query) {
+            return { exitCode: 1, output: 'Usage: brew intelligence search <query> [limit]' };
+          }
+          const limit = args[3] ? Number(args[3]) : 5;
+          const results = await retrievalService.search({ query, limit });
+          if (results.length === 0) {
+            return { exitCode: 0, output: `No semantic search results found for: "${query}"` };
+          }
+          const lines = [
+            `Semantic Search Results for: "${query}" (found ${results.length})`,
+            ...results.map(
+              (r, i) =>
+                `  [#${i + 1}] Score: ${r.score.toFixed(3)} | [${r.sourceId}] ${r.contentId} (${r.canonicalUrl})${
+                  r.reasons && r.reasons.length ? `\n       Matches: ${r.reasons.join(', ')}` : ''
+                }`
+            ),
+          ];
+          return { exitCode: 0, output: lines.join('\n') };
+        }
+
+        return { exitCode: 1, output: `Unknown intelligence command: '${subCommand}'. Use status, index, search.` };
+      }
+
       case 'help':
       default:
         return {
@@ -201,6 +278,9 @@ Usage:
   brew media list                        List media library assets
   brew agent list                        List registered agent identities
   brew audit tail                        Tail recent audit trail events
+  brew intelligence status               Inspect embedding model, index, and sources
+  brew intelligence index [source]       Index or reindex documents into semantic index
+  brew intelligence search <query>       Perform hybrid semantic retrieval query
 `,
         };
     }

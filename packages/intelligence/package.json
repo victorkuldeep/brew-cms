@@ -1,7 +1,7 @@
 {
-  "name": "@brew-cms/api",
+  "name": "@brew-cms/intelligence",
   "version": "0.1.0",
-  "description": "REST API router, OpenAPI spec, idempotency, and request validation for BrewCMS",
+  "description": "Federated content intelligence, deterministic chunking, vector embedding, and hybrid retrieval for BrewCMS",
   "license": "Apache-2.0",
   "type": "module",
   "main": "./dist/index.js",
@@ -17,13 +17,11 @@
     "clean": "rimraf dist"
   },
   "dependencies": {
-    "@brew-cms/content": "workspace:*",
     "@brew-cms/core": "workspace:*",
-    "@brew-cms/intelligence": "workspace:*",
-    "@brew-cms/policy": "workspace:*",
-    "zod": "^3.24.1"
+    "@brew-cms/content": "workspace:*",
+    "zod": "^3.24.2"
   },
   "devDependencies": {
-    "@brew-cms/db": "workspace:*"
+    "@xenova/transformers": "^2.17.2"
   }
 }

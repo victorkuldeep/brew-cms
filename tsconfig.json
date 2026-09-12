@@ -13,6 +13,7 @@
     { "path": "./packages/mcp" },
     { "path": "./packages/cli" },
     { "path": "./packages/ui" },
-    { "path": "./packages/client" }
+    { "path": "./packages/client" },
+    { "path": "./packages/intelligence" }
   ]
 }

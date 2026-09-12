@@ -10,7 +10,8 @@
     { "path": "../policy" },
     { "path": "../db" },
     { "path": "../media" },
-    { "path": "../search" }
+    { "path": "../search" },
+    { "path": "../intelligence" }
   ],
   "include": ["src/**/*"]
 }

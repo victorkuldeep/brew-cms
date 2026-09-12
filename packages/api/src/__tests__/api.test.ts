@@ -22,6 +22,15 @@ import {
   SQLiteAgentRepository,
   SQLiteMediaAssetRepository,
 } from '@brew-cms/db';
+import {
+  DefaultSourceRegistry,
+  DeterministicMockEmbeddingProvider,
+  MemorySemanticIndexAdapter,
+  MockContentSourceAdapter,
+  IndexingService,
+  HybridRetrievalService,
+  CanonicalSourceResolver,
+} from '@brew-cms/intelligence';
 
 describe('REST API /api/v1 and Router', () => {
   let ctx: ApiContext;
@@ -314,5 +323,94 @@ describe('REST API /api/v1 and Router', () => {
     );
     expect(agentList.status).toBe(200);
     expect(Array.isArray((agentList.body as any).items)).toBe(true);
+  });
+
+  it('exposes intelligence status, indexing, and hybrid retrieval endpoints', async () => {
+    // Set up intelligence services
+    const registry = new DefaultSourceRegistry();
+    const mockSource = new MockContentSourceAdapter('brew-sqlite', [
+      {
+        sourceId: 'brew-sqlite',
+        contentId: 'doc-ai-1',
+        revisionId: 'rev-1',
+        title: 'Distributed Enterprise Intelligence',
+        canonicalUrl: '/posts/distributed-enterprise-intelligence',
+        summary: 'How AI agents work with governed content workflows.',
+        body: '# Distributed Enterprise Intelligence\n\nHow AI agents work with governed content workflows and retrieval.',
+        publishedAt: '2026-09-12T00:00:00Z',
+      },
+    ]);
+    registry.register(mockSource);
+
+    const embeddingProvider = new DeterministicMockEmbeddingProvider();
+    const semanticIndex = new MemorySemanticIndexAdapter();
+    const indexingService = new IndexingService(registry, embeddingProvider, semanticIndex);
+    const retrievalService = new HybridRetrievalService(embeddingProvider, semanticIndex);
+    const canonicalResolver = new CanonicalSourceResolver(registry);
+
+    const intelligenceCtx: ApiContext = {
+      ...ctx,
+      sourceRegistry: registry,
+      indexingService,
+      retrievalService,
+      canonicalResolver,
+    };
+
+    // 1. Status endpoint
+    const statusRes = await handleApiRequest(
+      { method: 'GET', path: '/api/v1/intelligence/status', actor: adminActor },
+      intelligenceCtx
+    );
+    expect(statusRes.status).toBe(200);
+    expect((statusRes.body as any).status).toBe('operational');
+    expect((statusRes.body as any).sources.length).toBe(1);
+    expect((statusRes.body as any).sources[0].id).toBe('brew-sqlite');
+
+    // 2. Trigger Indexing
+    const indexRes = await handleApiRequest(
+      {
+        method: 'POST',
+        path: '/api/v1/intelligence/index',
+        actor: adminActor,
+        body: { sourceId: 'brew-sqlite' },
+      },
+      intelligenceCtx
+    );
+    expect(indexRes.status).toBe(200);
+    expect((indexRes.body as any).summary.indexed).toBe(1);
+
+    // 3. Search endpoint (references only)
+    const searchRes = await handleApiRequest(
+      {
+        method: 'GET',
+        path: '/api/v1/intelligence/search',
+        actor: adminActor,
+        query: { q: 'enterprise intelligence' },
+      },
+      intelligenceCtx
+    );
+    expect(searchRes.status).toBe(200);
+    expect((searchRes.body as any).total).toBeGreaterThan(0);
+    const item = (searchRes.body as any).items[0];
+    expect(item.contentId).toBe('doc-ai-1');
+    expect(item.sourceId).toBe('brew-sqlite');
+    // Content body must NOT be in search reference result
+    expect(item.markdown).toBeUndefined();
+
+    // 4. Search with resolve=true (canonical resolution)
+    const resolvedSearchRes = await handleApiRequest(
+      {
+        method: 'GET',
+        path: '/api/v1/intelligence/search',
+        actor: adminActor,
+        query: { q: 'enterprise intelligence', resolve: 'true' },
+      },
+      intelligenceCtx
+    );
+    expect(resolvedSearchRes.status).toBe(200);
+    const resolvedItem = (resolvedSearchRes.body as any).items[0];
+    expect(resolvedItem.reference.contentId).toBe('doc-ai-1');
+    expect(resolvedItem.canonical.title).toBe('Distributed Enterprise Intelligence');
+    expect(resolvedItem.canonical.body).toContain('governed content workflows');
   });
 });
