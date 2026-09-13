@@ -1,8 +1,7 @@
 import type { Actor, MediaAsset } from '../domain/types.js';
 import type { MediaAssetRepository, AuditEventRepository } from '../ports/repositories.js';
 import type { MediaProvider, IdGenerator, PolicyEnginePort } from '../ports/services.js';
-import { PolicyDeniedError } from '../domain/errors.js';
-import { ValidationError } from '../domain/errors.js';
+import { PolicyDeniedError, ValidationError, NotFoundError } from '../domain/errors.js';
 
 export interface MediaUploadInput {
   id?: string;
@@ -41,7 +40,23 @@ export class MediaService {
     return this.mediaRepo.list(filter);
   }
 
-  async uploadAsset(actor: Actor, input: MediaUploadInput): Promise<MediaAsset> {
+  async getAsset(id: string): Promise<MediaAsset & { url?: string | null }> {
+    const asset = await this.mediaRepo.findById(id);
+    if (!asset) {
+      throw new NotFoundError('MediaAsset', id);
+    }
+    let url: string | null = null;
+    if (this.mediaProvider) {
+      try {
+        url = (await this.mediaProvider.get(asset.providerKey)).url ?? null;
+      } catch {
+        url = null;
+      }
+    }
+    return { ...asset, url };
+  }
+
+  async uploadAsset(actor: Actor, input: MediaUploadInput): Promise<MediaAsset & { url?: string | null }> {
     const policyResult = await this.policyEngine.evaluate({
       actor,
       action: 'media:create',
@@ -52,7 +67,7 @@ export class MediaService {
       throw new PolicyDeniedError(policyResult.decision, policyResult.reason);
     }
 
-    let stored: { provider: 'local' | 's3' | 'r2'; providerKey: string; sizeBytes: number } | null = null;
+    let stored: { provider: 'local' | 's3' | 'r2'; providerKey: string; sizeBytes: number; url: string } | null = null;
     if (this.mediaProvider && input.contentBase64) {
       if (!input.filename || !input.mimeType) {
         throw new ValidationError('filename and mimeType are required for binary upload.');
@@ -89,6 +104,43 @@ export class MediaService {
       after: { id: saved.id, providerKey: saved.providerKey, mimeType: saved.mimeType },
     });
 
-    return saved;
+    return { ...saved, url: stored?.url ?? null };
+  }
+
+  async deleteAsset(actor: Actor, id: string): Promise<{ id: string }> {
+    const policyResult = await this.policyEngine.evaluate({
+      actor,
+      action: 'media:delete',
+      resourceType: 'media_asset',
+      resourceId: id,
+    });
+    if (policyResult.decision !== 'ALLOW') {
+      throw new PolicyDeniedError(policyResult.decision, policyResult.reason);
+    }
+
+    const asset = await this.mediaRepo.findById(id);
+    if (!asset) {
+      throw new NotFoundError('MediaAsset', id);
+    }
+
+    // Best-effort bytes removal; the record delete below is authoritative.
+    if (this.mediaProvider) {
+      try {
+        await this.mediaProvider.delete(asset.providerKey);
+      } catch {}
+    }
+    await this.mediaRepo.delete(id);
+
+    await this.auditRepo.create({
+      id: this.idGen.generate('aud'),
+      eventType: 'media.deleted',
+      actorType: actor.type,
+      actorId: actor.id,
+      resourceType: 'media_asset',
+      resourceId: id,
+      before: { id: asset.id, providerKey: asset.providerKey },
+    });
+
+    return { id };
   }
 }

@@ -247,8 +247,7 @@ describe('Inc 1 contract: envelope, errors, cursor, PATCH, idempotency modes', (
     expect((r3.body as any).data.document.id).toBe(idA);
   });
 
-  it('denies author media upload via policy while allowing reads', async () => {
-    const denied = await handleApiRequest(
+  it('denies author media upload via policy while allowing reads', async () => {    const denied = await handleApiRequest(
       {
         method: 'POST',
         path: '/api/v1/media',
@@ -311,5 +310,82 @@ describe('Inc 1 contract: envelope, errors, cursor, PATCH, idempotency modes', (
     const c = encodeCursor({ t: '2026-09-12T12:00:00.000Z', id: 'doc_1' });
     expect(typeof c).toBe('string');
     expect(c).not.toContain('=');
+  });
+
+  it('completes the media lifecycle: upload with url, get, delete', async () => {
+    // Wired provider so uploadAsset returns a servable url
+    const stubProvider = {
+      put: async (input: any) => ({
+        provider: 'local' as const,
+        providerKey: `covers/${input.filename}`,
+        url: `https://cdn.test/covers/${input.filename}`,
+        sizeBytes: 10,
+        mimeType: input.mimeType,
+        checksum: 'abc',
+      }),
+      get: async (key: string) => ({ url: `https://cdn.test/${key}` }),
+      delete: async (_key: string) => {},
+    };
+    const db2 = createDatabaseConnection({ filePath: ':memory:' });
+    seedInitialData(db2);
+    const auditRepo2 = new SQLiteAuditEventRepository(db2);
+    let mCounter = 1;
+    const idGen2: IdGenerator = { generate: (p = 'id') => `${p}_m${mCounter++}` };
+    const mediaService2 = new MediaService(
+      stubProvider,
+      new SQLiteMediaAssetRepository(db2),
+      new PolicyEngine(),
+      auditRepo2,
+      idGen2
+    );
+    const mctx: ApiContext = { ...ctx, mediaService: mediaService2 };
+
+    // Upload with binary → url surfaced
+    const up = await handleApiRequest(
+      {
+        method: 'POST',
+        path: '/api/v1/media',
+        actor: adminActor,
+        body: {
+          filename: 'cover.webp',
+          mimeType: 'image/webp',
+          contentBase64: Buffer.from('fake-bytes').toString('base64'),
+        },
+      },
+      mctx
+    );
+    expect(up.status).toBe(201);
+    expect((up.body as any).data.url).toBe('https://cdn.test/covers/cover.webp');
+    const assetId = (up.body as any).data.id;
+
+    // GET single asset resolves url through the provider
+    const got = await handleApiRequest(
+      { method: 'GET', path: `/api/v1/media/${assetId}`, actor: adminActor },
+      mctx
+    );
+    expect(got.status).toBe(200);
+    expect((got.body as any).data.asset.id).toBe(assetId);
+
+    // Author cannot delete (media:delete ungranted)
+    const denied = await handleApiRequest(
+      { method: 'DELETE', path: `/api/v1/media/${assetId}`, actor: authorActor },
+      mctx
+    );
+    expect(denied.status).toBe(403);
+
+    // Admin delete removes record + bytes
+    const del = await handleApiRequest(
+      { method: 'DELETE', path: `/api/v1/media/${assetId}`, actor: adminActor },
+      mctx
+    );
+    expect(del.status).toBe(200);
+    expect((del.body as any).data.id).toBe(assetId);
+
+    const gone = await handleApiRequest(
+      { method: 'GET', path: `/api/v1/media/${assetId}`, actor: adminActor },
+      mctx
+    );
+    expect(gone.status).toBe(404);
+    expect((gone.body as any).error.code).toBe('NOT_FOUND');
   });
 });

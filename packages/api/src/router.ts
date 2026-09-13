@@ -412,6 +412,23 @@ async function dispatchRoute(req: ApiRequest, ctx: ApiContext): Promise<RouteRes
     }
   }
 
+  // Single media asset: /api/v1/media/:id
+  const mediaMatch = urlPath.match(/^\/api\/v1\/media\/([^/]+)$/);
+  if (mediaMatch) {
+    if (!ctx.mediaService) {
+      throw new NoMediaRepositoryError();
+    }
+    const mediaId = mediaMatch[1];
+    if (method === 'GET') {
+      const asset = await ctx.mediaService.getAsset(mediaId);
+      return { status: 200, body: { asset } };
+    }
+    if (method === 'DELETE') {
+      const res = await ctx.mediaService.deleteAsset(actor, mediaId);
+      return { status: 200, body: res };
+    }
+  }
+
   // Audit Events
   if (urlPath === '/api/v1/audit' && method === 'GET') {
     const result = await ctx.auditService.listEvents({
