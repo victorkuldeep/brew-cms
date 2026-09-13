@@ -4,7 +4,7 @@ import { cms } from '@/lib/cms';
 export const dynamic = 'force-dynamic';
 
 export default async function AuditPage() {
-  const events = await cms.auditService.listEvents({ limit: 100 });
+  const { items: events, total } = await cms.auditService.listEvents({ limit: 100 });
 
   return (
     <div className="flex-1 p-8 bg-canvas overflow-y-auto">
@@ -18,7 +18,7 @@ export default async function AuditPage() {
             </p>
           </div>
           <div className="text-xs font-semibold px-3 py-1.5 rounded bg-surface border border-line text-ink">
-            {events.length} Recorded Events
+            {total} Recorded Events
           </div>
         </div>
 

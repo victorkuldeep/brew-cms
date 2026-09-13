@@ -14,7 +14,7 @@ export default async function DocumentEditorPage({ params }: Props) {
   const doc = await cms.documentService.getDocument(id).catch(() => null);
   if (!doc) notFound();
 
-  const revisions = await cms.revRepo.listByDocumentId(id);
+  const revisions = await cms.documentService.getRevisions(id);
   const latestRev = revisions.length > 0 ? revisions[0] : null;
 
   return (
