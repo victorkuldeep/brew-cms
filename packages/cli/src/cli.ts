@@ -186,9 +186,9 @@ export async function runCli(
 
       case 'audit': {
         if (subCommand === 'tail') {
-          const events = await auditService.listEvents({ limit: 10 });
-          if (events.length === 0) return { exitCode: 0, output: 'Audit log is empty.' };
-          const lines = events.map(
+          const page = await auditService.listEvents({ limit: 10 });
+          if (page.items.length === 0) return { exitCode: 0, output: 'Audit log is empty.' };
+          const lines = page.items.map(
             (e) => `${new Date(e.createdAt).toISOString()} [${e.eventType}] ${e.actorType}:${e.actorId} -> ${e.resourceType}:${e.resourceId}`
           );
           return { exitCode: 0, output: lines.join('\n') };

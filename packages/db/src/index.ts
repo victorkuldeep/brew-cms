@@ -1,6 +1,7 @@
 export * from './schema.js';
 export * from './connection.js';
 export * from './seed.js';
+export * from './idempotency-store.js';
 export * from './repositories/document-repository.js';
 export * from './repositories/revision-repository.js';
 export * from './repositories/user-repository.js';

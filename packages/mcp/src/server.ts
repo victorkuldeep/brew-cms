@@ -62,14 +62,15 @@ export class BrewMcpServer {
     const docMatch = uri.match(/^brew:\/\/document\/([^/]+)$/);
     if (docMatch) {
       const doc = await this.ctx.documentService.getDocument(docMatch[1]);
-      const latestRev = await this.ctx.revisionRepo.getLatestByDocumentId(doc.id);
-      return { contents: { document: doc, latestRevision: latestRev } };
+      const revisions = await this.ctx.documentService.getRevisions(doc.id);
+      return { contents: { document: doc, latestRevision: revisions[0] ?? null } };
     }
 
     // Revision resource: brew://document/{id}/revision/{revId}
     const revMatch = uri.match(/^brew:\/\/document\/([^/]+)\/revision\/([^/]+)$/);
     if (revMatch) {
-      const rev = await this.ctx.revisionRepo.findById(revMatch[2]);
+      const revisions = await this.ctx.documentService.getRevisions(revMatch[1]);
+      const rev = revisions.find((r) => r.id === revMatch[2]) ?? null;
       return { contents: { revision: rev } };
     }
 
@@ -246,10 +247,10 @@ export class BrewMcpServer {
       else if (args.slug) doc = await this.ctx.documentService.getDocumentBySlug(args.slug);
       if (!doc) return { status: 'FAILED', error: 'Document not found' };
 
-      const latestRev = await this.ctx.revisionRepo.getLatestByDocumentId(doc.id);
+      const revisions = await this.ctx.documentService.getRevisions(doc.id);
       return {
         status: 'COMPLETED',
-        output: { document: doc, latestRevision: latestRev },
+        output: { document: doc, latestRevision: revisions[0] ?? null },
       };
     }
 

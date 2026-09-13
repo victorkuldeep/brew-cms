@@ -70,6 +70,19 @@ export class AgentService {
     return this.agentRepo.list();
   }
 
+  /**
+   * Lists agent action runs through the service boundary (read passthrough;
+   * mutations stay policy-gated via executeActionRun/approve/reject).
+   */
+  async listActionRuns(filter?: {
+    agentId?: string;
+    status?: string;
+    limit?: number;
+    cursor?: string;
+  }): Promise<{ items: ActionRun[]; total: number; nextCursor?: string }> {
+    return this.agentRepo.listActionRuns(filter);
+  }
+
   async getAgent(id: string): Promise<AgentIdentity> {
     const agent = await this.agentRepo.findById(id);
     if (!agent) throw new NotFoundError('Agent', id);
@@ -80,7 +93,7 @@ export class AgentService {
     // 1. Check idempotency if key provided
     if (input.idempotencyKey) {
       const existingRuns = await this.agentRepo.listActionRuns({ limit: 100 });
-      const matched = existingRuns.find(
+      const matched = existingRuns.items.find(
         (r) => r.idempotencyKey === input.idempotencyKey && r.actorId === actor.id
       );
       if (matched) {

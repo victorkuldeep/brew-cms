@@ -5,6 +5,7 @@ import {
   AgentService,
   AuditService,
   TaxonomyService,
+  MediaService,
   type Clock,
   type IdGenerator,
   type Actor,
@@ -20,10 +21,10 @@ import {
   SQLiteMediaAssetRepository,
   SQLiteAuditEventRepository,
   SQLiteAgentRepository,
+  SqliteIdempotencyStore,
 } from '@brew-cms/db';
 import { LocalMediaProvider } from '@brew-cms/media';
 import { InMemorySearchProvider, DeterministicRecommendationEngine } from '@brew-cms/search';
-import { InMemoryIdempotencyStore } from '@brew-cms/api';
 import { BrewMcpServer } from '@brew-cms/mcp';
 
 class CmsContainer {
@@ -45,6 +46,7 @@ class CmsContainer {
   public agentService;
   public auditService;
   public taxonomyService;
+  public mediaService;
 
   public mediaProvider;
   public searchProvider;
@@ -107,10 +109,17 @@ class CmsContainer {
       uploadDir: uploadsDir,
       baseUrl: '/uploads',
     });
+    this.mediaService = new MediaService(
+      this.mediaProvider,
+      this.mediaRepo,
+      this.policyEngine,
+      this.auditRepo,
+      this.idGen
+    );
 
     this.searchProvider = new InMemorySearchProvider();
     this.recommendationEngine = new DeterministicRecommendationEngine();
-    this.idempotencyStore = new InMemoryIdempotencyStore();
+    this.idempotencyStore = new SqliteIdempotencyStore(this.db);
 
     this.mcpServer = new BrewMcpServer({
       documentService: this.documentService,
@@ -138,10 +147,7 @@ class CmsContainer {
       agentService: this.agentService,
       auditService: this.auditService,
       taxonomyService: this.taxonomyService,
-      revisionRepo: this.revRepo,
-      mediaProvider: this.mediaProvider,
-      mediaRepo: this.mediaRepo,
-      agentRepo: this.agentRepo,
+      mediaService: this.mediaService,
       idempotencyStore: this.idempotencyStore,
     };
   }

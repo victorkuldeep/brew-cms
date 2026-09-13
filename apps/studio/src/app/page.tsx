@@ -6,7 +6,8 @@ export const dynamic = 'force-dynamic';
 
 export default async function DashboardPage() {
   const { items: documents, total: totalDocs } = await cms.documentService.listDocuments({ limit: 10 });
-  const pendingApprovals = await cms.agentRepo.listActionRuns({ status: 'pending' });
+  const pendingPage = await cms.agentService.listActionRuns({ status: 'pending' });
+  const pendingApprovals = pendingPage.items;
 
   const draftCount = documents.filter((d) => d.status === 'DRAFT').length;
   const reviewCount = documents.filter((d) => d.status === 'IN_REVIEW').length;

@@ -275,6 +275,15 @@ export function initializeSchema(db: DatabaseSync): void {
       status_code INTEGER NOT NULL DEFAULT 301
     );
 
+    CREATE TABLE IF NOT EXISTS idempotency_records (
+      key TEXT NOT NULL,
+      actor_id TEXT NOT NULL,
+      response_status INTEGER NOT NULL,
+      response_body_json TEXT,
+      expires_at TEXT NOT NULL,
+      PRIMARY KEY (key, actor_id)
+    );
+
     -- Indexes for fast queries
     CREATE INDEX IF NOT EXISTS idx_documents_slug ON documents(slug);
     CREATE INDEX IF NOT EXISTS idx_documents_status ON documents(status);

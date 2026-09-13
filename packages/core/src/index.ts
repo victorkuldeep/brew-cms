@@ -1,6 +1,7 @@
 export * from './domain/types.js';
 export * from './domain/errors.js';
 export * from './storage-paths.js';
+export * from './pagination.js';
 export * from './ports/repositories.js';
 export * from './ports/services.js';
 export * from './application/document-service.js';
@@ -8,3 +9,4 @@ export * from './application/workflow-service.js';
 export * from './application/agent-service.js';
 export * from './application/audit-service.js';
 export * from './application/taxonomy-service.js';
+export * from './application/media-service.js';

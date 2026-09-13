@@ -78,3 +78,27 @@ export class InvalidStateTransitionError extends DomainError {
     );
   }
 }
+
+export class AuthenticationRequiredError extends DomainError {
+  constructor(message: string = 'Authentication required.') {
+    super(message, 'AUTH_REQUIRED', 401);
+  }
+}
+
+export class AuthorizationError extends DomainError {
+  constructor(message: string = 'Forbidden for this identity.') {
+    super(message, 'AUTH_FORBIDDEN', 403);
+  }
+}
+
+export class RevisionConflictError extends DomainError {
+  constructor(message: string, details?: unknown) {
+    super(message, 'REVISION_CONFLICT', 409, details);
+  }
+}
+
+export class RateLimitedError extends DomainError {
+  constructor(message: string = 'Rate limit exceeded. Retry later.') {
+    super(message, 'RATE_LIMITED', 429);
+  }
+}

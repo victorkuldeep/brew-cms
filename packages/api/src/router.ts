@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type {
   Actor,
   DocumentService,
@@ -5,10 +6,9 @@ import type {
   AgentService,
   AuditService,
   TaxonomyService,
-  RevisionRepository,
-  MediaProvider,
-  MediaAssetRepository,
-  AgentRepository,
+  MediaService,
+  IdempotencyStore,
+  PolicyDecision,
 } from '@brew-cms/core';
 import type {
   SourceRegistry,
@@ -17,8 +17,14 @@ import type {
   CanonicalSourceResolver,
 } from '@brew-cms/intelligence';
 import { compileContent } from '@brew-cms/content';
-import { formatErrorResponse } from './errors.js';
-import { InMemoryIdempotencyStore } from './idempotency.js';
+import {
+  formatErrorResponse,
+  NoMediaRepositoryError,
+  IntelligenceUnavailableError,
+  InvalidQueryError,
+  RouteNotFoundError,
+} from './errors.js';
+import { ValidationError } from '@brew-cms/core';
 import {
   CreateDocumentRequestSchema,
   UpdateDocumentRequestSchema,
@@ -44,53 +50,84 @@ export interface ApiResponse {
   body: unknown;
 }
 
+/**
+ * Success envelope (Charter Phase 1). Default shape for every 2xx response:
+ * `{ data, requestId, policy? }`. Pass `?envelope=legacy` to receive the
+ * historic raw body (supported for one release cycle, then removed).
+ * `policy` is populated only where the router truthfully knows the gate
+ * outcome (agent approval flows); it is omitted elsewhere rather than
+ * fabricated. Full policy surfacing arrives with service-returned decisions.
+ */
+export interface ApiSuccessEnvelope {
+  data: unknown;
+  requestId: string;
+  policy?: {
+    decision: PolicyDecision;
+    reason?: string;
+  };
+}
+
 export interface ApiContext {
   documentService: DocumentService;
   workflowService: WorkflowService;
   agentService: AgentService;
   auditService: AuditService;
   taxonomyService: TaxonomyService;
-  revisionRepo: RevisionRepository;
-  mediaProvider?: MediaProvider;
-  mediaRepo?: MediaAssetRepository;
-  agentRepo?: AgentRepository;
-  idempotencyStore?: InMemoryIdempotencyStore;
+  mediaService?: MediaService;
+  idempotencyStore?: IdempotencyStore;
   sourceRegistry?: SourceRegistry;
   indexingService?: IndexingService;
   retrievalService?: HybridRetrievalService;
   canonicalResolver?: CanonicalSourceResolver;
 }
 
+/** Route result: a response plus an optional truthful policy outcome. */
+type RouteResult = ApiResponse & {
+  policy?: { decision: PolicyDecision; reason?: string };
+};
+
 export async function handleApiRequest(
   req: ApiRequest,
   ctx: ApiContext
 ): Promise<ApiResponse> {
+  const requestId = req.headers?.['x-request-id'] || `req_${randomUUID()}`;
+  const legacy = req.query?.envelope === 'legacy';
   const idempotencyKey = req.headers?.['idempotency-key'];
   const idempotencyStore = ctx.idempotencyStore;
+  // Scope replay keys by envelope mode so legacy and enveloped callers
+  // never receive each other's cached shapes.
+  const cacheKey = idempotencyKey ? `${legacy ? 'legacy' : 'enveloped'}:${idempotencyKey}` : undefined;
 
-  // 1. Idempotency Check for mutations
-  if (idempotencyKey && req.method !== 'GET' && idempotencyStore) {
-    const cached = idempotencyStore.get(idempotencyKey, req.actor.id);
+  // 1. Idempotency Check for mutations (raw bodies are cached; the envelope
+  //    is applied on the way out so both modes replay correctly).
+  if (cacheKey && req.method !== 'GET' && idempotencyStore) {
+    const cached = idempotencyStore.get(cacheKey, req.actor.id);
     if (cached) {
       return {
         status: cached.responseStatus,
-        headers: { 'X-Cache-Lookup': 'HIT', 'Idempotency-Key': idempotencyKey },
-        body: cached.responseBody,
+        headers: { 'X-Cache-Lookup': 'HIT', 'Idempotency-Key': idempotencyKey! },
+        body: legacy ? cached.responseBody : toEnvelope(cached.responseBody, requestId),
       };
     }
   }
 
   try {
-    const response = await dispatchRoute(req, ctx);
+    const result: RouteResult = await dispatchRoute(req, ctx);
+    const { policy, ...response } = result;
 
-    // Save in idempotency store if mutation
-    if (idempotencyKey && req.method !== 'GET' && idempotencyStore && response.status < 400) {
-      idempotencyStore.set(idempotencyKey, req.actor.id, response.status, response.body);
+    // Save in idempotency store if mutation (raw dispatch body)
+    if (cacheKey && req.method !== 'GET' && idempotencyStore && response.status < 400) {
+      idempotencyStore.set(cacheKey, req.actor.id, response.status, response.body);
     }
 
-    return response;
+    if (legacy) return response;
+    if (response.status >= 400) return response; // errors are already enveloped
+    return {
+      ...response,
+      body: toEnvelope(response.body, requestId, policy),
+    };
   } catch (err: any) {
-    const errorFormatted = formatErrorResponse(err, req.headers?.['x-request-id']);
+    const errorFormatted = formatErrorResponse(err, requestId);
     return {
       status: errorFormatted.status,
       headers: { 'Content-Type': 'application/json' },
@@ -99,7 +136,29 @@ export async function handleApiRequest(
   }
 }
 
-async function dispatchRoute(req: ApiRequest, ctx: ApiContext): Promise<ApiResponse> {
+function toEnvelope(
+  data: unknown,
+  requestId: string,
+  policy?: { decision: PolicyDecision; reason?: string }
+): ApiSuccessEnvelope {
+  return policy ? { data, requestId, policy } : { data, requestId };
+}
+
+/**
+ * Parses a `limit` query parameter. Rejects non-integers and values < 1
+ * (a negative LIMIT means "unlimited" in SQLite — never honor that from
+ * a remote caller). Absent → undefined (repository default applies).
+ */
+function parseLimit(raw: string | undefined, def?: number): number | undefined {
+  if (raw === undefined) return def;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 1) {
+    throw new ValidationError(`Invalid 'limit' parameter: '${raw}'. Must be a positive integer.`);
+  }
+  return n;
+}
+
+async function dispatchRoute(req: ApiRequest, ctx: ApiContext): Promise<RouteResult> {
   const { path: rawPath, method, actor } = req;
   const urlPath = rawPath.replace(/\/$/, '');
 
@@ -118,7 +177,8 @@ async function dispatchRoute(req: ApiRequest, ctx: ApiContext): Promise<ApiRespo
         type: req.query?.type as any,
         status: req.query?.status as any,
         query: req.query?.q,
-        limit: req.query?.limit ? Number(req.query.limit) : undefined,
+        limit: parseLimit(req.query?.limit),
+        cursor: req.query?.cursor,
       });
       return { status: 200, body: result };
     }
@@ -156,7 +216,7 @@ async function dispatchRoute(req: ApiRequest, ctx: ApiContext): Promise<ApiRespo
       const doc = await ctx.documentService.getDocument(id);
       return { status: 200, body: doc };
     }
-    if (method === 'PUT') {
+    if (method === 'PUT' || method === 'PATCH') {
       const validated = UpdateDocumentRequestSchema.parse(req.body);
       let compiled: ReturnType<typeof compileContent> | undefined;
       if (validated.sourceMarkdown !== undefined) {
@@ -192,7 +252,7 @@ async function dispatchRoute(req: ApiRequest, ctx: ApiContext): Promise<ApiRespo
   const revMatch = urlPath.match(/^\/api\/v1\/documents\/([^/]+)\/revisions$/);
   if (revMatch && method === 'GET') {
     const id = revMatch[1];
-    const revisions = await ctx.revisionRepo.listByDocumentId(id);
+    const revisions = await ctx.documentService.getRevisions(id);
     return { status: 200, body: { revisions } };
   }
 
@@ -320,43 +380,33 @@ async function dispatchRoute(req: ApiRequest, ctx: ApiContext): Promise<ApiRespo
     }
   }
 
-  // Media: /api/v1/media
+  // Media: /api/v1/media (converged on MediaService — no direct provider/repo use)
   if (urlPath === '/api/v1/media') {
+    if (!ctx.mediaService) {
+      throw new NoMediaRepositoryError();
+    }
     if (method === 'GET') {
-      const items = ctx.mediaRepo
-        ? await ctx.mediaRepo.list({
-            mimeType: req.query?.mimeType,
-            limit: req.query?.limit ? Number(req.query.limit) : 50,
-          })
-        : [];
+      const items = await ctx.mediaService.listAssets({
+        mimeType: req.query?.mimeType,
+        limit: parseLimit(req.query?.limit, 50),
+      });
       return { status: 200, body: { items } };
     }
     if (method === 'POST') {
-      const body = req.body as any;
-      if (!ctx.mediaRepo) {
-        return { status: 500, body: { error: { code: 'NO_MEDIA_REPO', message: 'Media repository not configured.' } } };
-      }
-      let stored: any = null;
-      if (ctx.mediaProvider && body.contentBase64) {
-        stored = await ctx.mediaProvider.put({
-          filename: body.filename,
-          mimeType: body.mimeType,
-          content: Buffer.from(body.contentBase64, 'base64'),
-          prefix: body.prefix,
-        });
-      }
-      const asset = await ctx.mediaRepo.create({
-        id: body.id || `med_${Date.now()}`,
-        provider: stored?.provider || 'local',
-        providerKey: stored?.providerKey || body.providerKey || body.filename,
-        mimeType: body.mimeType || 'application/octet-stream',
-        sizeBytes: stored?.sizeBytes || body.sizeBytes || 0,
+      const body = (req.body ?? {}) as Record<string, any>;
+      const asset = await ctx.mediaService.uploadAsset(actor, {
+        id: body.id,
+        filename: body.filename,
+        mimeType: body.mimeType,
+        contentBase64: body.contentBase64,
+        prefix: body.prefix,
+        providerKey: body.providerKey,
+        sizeBytes: body.sizeBytes,
         width: body.width ?? null,
         height: body.height ?? null,
         altText: body.altText ?? null,
         caption: body.caption ?? null,
         metadata: body.metadata ?? null,
-        createdBy: actor.id,
       });
       return { status: 201, body: asset };
     }
@@ -364,13 +414,14 @@ async function dispatchRoute(req: ApiRequest, ctx: ApiContext): Promise<ApiRespo
 
   // Audit Events
   if (urlPath === '/api/v1/audit' && method === 'GET') {
-    const events = await ctx.auditService.listEvents({
+    const result = await ctx.auditService.listEvents({
       resourceType: req.query?.resourceType,
       resourceId: req.query?.resourceId,
       actorId: req.query?.actorId,
-      limit: req.query?.limit ? Number(req.query.limit) : 50,
+      limit: parseLimit(req.query?.limit),
+      cursor: req.query?.cursor,
     });
-    return { status: 200, body: { items: events } };
+    return { status: 200, body: result };
   }
 
   // Agents: /api/v1/agents
@@ -391,13 +442,14 @@ async function dispatchRoute(req: ApiRequest, ctx: ApiContext): Promise<ApiRespo
     }
   }
 
-  // Agent Action Runs: /api/v1/agent/runs
+  // Agent Action Runs: /api/v1/agent/runs (converged on AgentService)
   if (urlPath === '/api/v1/agent/runs') {
     if (method === 'GET') {
-      const runs = ctx.agentRepo
-        ? await ctx.agentRepo.listActionRuns({ limit: req.query?.limit ? Number(req.query.limit) : 50 })
-        : [];
-      return { status: 200, body: { items: runs } };
+      const result = await ctx.agentService.listActionRuns({
+        limit: parseLimit(req.query?.limit),
+        cursor: req.query?.cursor,
+      });
+      return { status: 200, body: result };
     }
   }
 
@@ -406,7 +458,12 @@ async function dispatchRoute(req: ApiRequest, ctx: ApiContext): Promise<ApiRespo
   if (approveRunMatch && method === 'POST') {
     const runId = approveRunMatch[1];
     const res = await ctx.agentService.approveActionRun(actor, runId, (req.body as any)?.reason);
-    return { status: 200, body: res };
+    return {
+      status: 200,
+      body: res,
+      // Truthful gate outcome: the decision that forced human approval.
+      policy: { decision: res.actionRun.policyDecision },
+    };
   }
 
   // Agent Action Run Rejection: /api/v1/agent/runs/:id/reject
@@ -414,7 +471,11 @@ async function dispatchRoute(req: ApiRequest, ctx: ApiContext): Promise<ApiRespo
   if (rejectRunMatch && method === 'POST') {
     const runId = rejectRunMatch[1];
     const res = await ctx.agentService.rejectActionRun(actor, runId, (req.body as any)?.reason);
-    return { status: 200, body: res };
+    return {
+      status: 200,
+      body: res,
+      policy: { decision: res.actionRun.policyDecision },
+    };
   }
 
   // Intelligence: Status / Sources
@@ -440,27 +501,11 @@ async function dispatchRoute(req: ApiRequest, ctx: ApiContext): Promise<ApiRespo
   // Intelligence: Hybrid Retrieval
   if (urlPath === '/api/v1/intelligence/search' && method === 'GET') {
     if (!ctx.retrievalService) {
-      return {
-        status: 503,
-        body: {
-          error: {
-            code: 'INTELLIGENCE_UNAVAILABLE',
-            message: 'Retrieval service is not configured.',
-          },
-        },
-      };
+      throw new IntelligenceUnavailableError('Retrieval service is not configured.');
     }
     const q = req.query?.q;
     if (!q || typeof q !== 'string') {
-      return {
-        status: 400,
-        body: {
-          error: {
-            code: 'INVALID_QUERY',
-            message: "Query parameter 'q' is required.",
-          },
-        },
-      };
+      throw new InvalidQueryError();
     }
     const limit = req.query?.limit ? Number(req.query.limit) : 10;
     const minScore = req.query?.minScore ? Number(req.query.minScore) : undefined;
@@ -503,15 +548,7 @@ async function dispatchRoute(req: ApiRequest, ctx: ApiContext): Promise<ApiRespo
   // Intelligence: Indexing
   if (urlPath === '/api/v1/intelligence/index' && method === 'POST') {
     if (!ctx.indexingService) {
-      return {
-        status: 503,
-        body: {
-          error: {
-            code: 'INTELLIGENCE_UNAVAILABLE',
-            message: 'Indexing service is not configured.',
-          },
-        },
-      };
+      throw new IntelligenceUnavailableError('Indexing service is not configured.');
     }
     const body = (req.body || {}) as { sourceId?: string; contentId?: string; revisionId?: string };
     if (body.sourceId && body.contentId) {
@@ -526,13 +563,5 @@ async function dispatchRoute(req: ApiRequest, ctx: ApiContext): Promise<ApiRespo
     }
   }
 
-  return {
-    status: 404,
-    body: {
-      error: {
-        code: 'ROUTE_NOT_FOUND',
-        message: `Endpoint '${method} ${urlPath}' was not found.`,
-      },
-    },
-  };
+  throw new RouteNotFoundError(`${method} ${urlPath}`);
 }

@@ -7,6 +7,7 @@ import {
   AgentService,
   AuditService,
   TaxonomyService,
+  MediaService,
   type Actor,
   type Clock,
   type IdGenerator,
@@ -62,6 +63,7 @@ describe('REST API /api/v1 and Router', () => {
     const taxonomyService = new TaxonomyService(taxRepo);
 
     const mediaRepo = new SQLiteMediaAssetRepository(db);
+    const mediaService = new MediaService(undefined, mediaRepo, policy, auditRepo, idGen);
 
     ctx = {
       documentService,
@@ -69,9 +71,7 @@ describe('REST API /api/v1 and Router', () => {
       agentService,
       auditService,
       taxonomyService,
-      revisionRepo: revRepo,
-      mediaRepo,
-      agentRepo,
+      mediaService,
       idempotencyStore: new InMemoryIdempotencyStore(),
     };
   });
@@ -82,14 +82,14 @@ describe('REST API /api/v1 and Router', () => {
       ctx
     );
     expect(live.status).toBe(200);
-    expect((live.body as any).status).toBe('live');
+    expect((live.body as any).data.status).toBe('live');
 
     const ready = await handleApiRequest(
       { method: 'GET', path: '/api/health/ready', actor: adminActor },
       ctx
     );
     expect(ready.status).toBe(200);
-    expect((ready.body as any).status).toBe('ready');
+    expect((ready.body as any).data.status).toBe('ready');
   });
 
   it('creates and publishes a document via REST endpoints', async () => {
@@ -110,7 +110,7 @@ describe('REST API /api/v1 and Router', () => {
     );
 
     expect(createRes.status).toBe(201);
-    const doc = (createRes.body as any).document;
+    const doc = (createRes.body as any).data.document;
     expect(doc.id).toBeDefined();
     expect(doc.status).toBe('DRAFT');
 
@@ -126,7 +126,7 @@ describe('REST API /api/v1 and Router', () => {
     );
 
     expect(publishRes.status).toBe(200);
-    expect((publishRes.body as any).document.status).toBe('PUBLISHED');
+    expect((publishRes.body as any).data.document.status).toBe('PUBLISHED');
   });
 
   it('enforces idempotency using Idempotency-Key header', async () => {
@@ -150,7 +150,7 @@ describe('REST API /api/v1 and Router', () => {
     );
 
     expect(req1.status).toBe(201);
-    const initialId = (req1.body as any).document.id;
+    const initialId = (req1.body as any).data.document.id;
 
     // Second identical request with same key
     const req2 = await handleApiRequest(
@@ -171,7 +171,7 @@ describe('REST API /api/v1 and Router', () => {
 
     expect(req2.status).toBe(201);
     expect(req2.headers?.['X-Cache-Lookup']).toBe('HIT');
-    expect((req2.body as any).document.id).toBe(initialId);
+    expect((req2.body as any).data.document.id).toBe(initialId);
   });
 
   it('returns standard machine-readable error envelope on validation failure', async () => {
@@ -212,8 +212,8 @@ describe('REST API /api/v1 and Router', () => {
       ctx
     );
     expect(createRes.status).toBe(201);
-    const docId = (createRes.body as any).document.id;
-    const initialRevId = (createRes.body as any).revision.id;
+    const docId = (createRes.body as any).data.document.id;
+    const initialRevId = (createRes.body as any).data.revision.id;
 
     // 2. Submit for review
     const submitRes = await handleApiRequest(
@@ -226,7 +226,7 @@ describe('REST API /api/v1 and Router', () => {
       ctx
     );
     expect(submitRes.status).toBe(200);
-    expect((submitRes.body as any).status).toBe('IN_REVIEW');
+    expect((submitRes.body as any).data.status).toBe('IN_REVIEW');
 
     // 3. Approve
     const approveRes = await handleApiRequest(
@@ -239,7 +239,7 @@ describe('REST API /api/v1 and Router', () => {
       ctx
     );
     expect(approveRes.status).toBe(200);
-    expect((approveRes.body as any).status).toBe('APPROVED');
+    expect((approveRes.body as any).data.status).toBe('APPROVED');
 
     // 4. Publish
     const publishRes = await handleApiRequest(
@@ -252,7 +252,7 @@ describe('REST API /api/v1 and Router', () => {
       ctx
     );
     expect(publishRes.status).toBe(200);
-    expect((publishRes.body as any).document.status).toBe('PUBLISHED');
+    expect((publishRes.body as any).data.document.status).toBe('PUBLISHED');
 
     // 5. Unpublish
     const unpublishRes = await handleApiRequest(
@@ -265,7 +265,7 @@ describe('REST API /api/v1 and Router', () => {
       ctx
     );
     expect(unpublishRes.status).toBe(200);
-    expect((unpublishRes.body as any).status).toBe('DRAFT');
+    expect((unpublishRes.body as any).data.status).toBe('DRAFT');
 
     // 6. Restore initial revision
     const restoreRes = await handleApiRequest(
@@ -278,8 +278,8 @@ describe('REST API /api/v1 and Router', () => {
       ctx
     );
     expect(restoreRes.status).toBe(200);
-    expect((restoreRes.body as any).restoredRevision).toBeDefined();
-    expect((restoreRes.body as any).restoredRevision.sourceMarkdown).toBe('# Lifecycle Test\n\nInitial version.');
+    expect((restoreRes.body as any).data.restoredRevision).toBeDefined();
+    expect((restoreRes.body as any).data.restoredRevision.sourceMarkdown).toBe('# Lifecycle Test\n\nInitial version.');
   });
 
   it('manages media and agent endpoints', async () => {
@@ -299,7 +299,7 @@ describe('REST API /api/v1 and Router', () => {
       ctx
     );
     expect(mediaCreate.status).toBe(201);
-    expect((mediaCreate.body as any).id).toBeDefined();
+    expect((mediaCreate.body as any).data.id).toBeDefined();
 
     const mediaList = await handleApiRequest(
       {
@@ -310,7 +310,7 @@ describe('REST API /api/v1 and Router', () => {
       ctx
     );
     expect(mediaList.status).toBe(200);
-    expect((mediaList.body as any).items.length).toBeGreaterThan(0);
+    expect((mediaList.body as any).data.items.length).toBeGreaterThan(0);
 
     // Agent list
     const agentList = await handleApiRequest(
@@ -322,7 +322,7 @@ describe('REST API /api/v1 and Router', () => {
       ctx
     );
     expect(agentList.status).toBe(200);
-    expect(Array.isArray((agentList.body as any).items)).toBe(true);
+    expect(Array.isArray((agentList.body as any).data.items)).toBe(true);
   });
 
   it('exposes intelligence status, indexing, and hybrid retrieval endpoints', async () => {
@@ -362,9 +362,9 @@ describe('REST API /api/v1 and Router', () => {
       intelligenceCtx
     );
     expect(statusRes.status).toBe(200);
-    expect((statusRes.body as any).status).toBe('operational');
-    expect((statusRes.body as any).sources.length).toBe(1);
-    expect((statusRes.body as any).sources[0].id).toBe('brew-sqlite');
+    expect((statusRes.body as any).data.status).toBe('operational');
+    expect((statusRes.body as any).data.sources.length).toBe(1);
+    expect((statusRes.body as any).data.sources[0].id).toBe('brew-sqlite');
 
     // 2. Trigger Indexing
     const indexRes = await handleApiRequest(
@@ -377,7 +377,7 @@ describe('REST API /api/v1 and Router', () => {
       intelligenceCtx
     );
     expect(indexRes.status).toBe(200);
-    expect((indexRes.body as any).summary.indexed).toBe(1);
+    expect((indexRes.body as any).data.summary.indexed).toBe(1);
 
     // 3. Search endpoint (references only)
     const searchRes = await handleApiRequest(
@@ -390,8 +390,8 @@ describe('REST API /api/v1 and Router', () => {
       intelligenceCtx
     );
     expect(searchRes.status).toBe(200);
-    expect((searchRes.body as any).total).toBeGreaterThan(0);
-    const item = (searchRes.body as any).items[0];
+    expect((searchRes.body as any).data.total).toBeGreaterThan(0);
+    const item = (searchRes.body as any).data.items[0];
     expect(item.contentId).toBe('doc-ai-1');
     expect(item.sourceId).toBe('brew-sqlite');
     // Content body must NOT be in search reference result
@@ -408,7 +408,7 @@ describe('REST API /api/v1 and Router', () => {
       intelligenceCtx
     );
     expect(resolvedSearchRes.status).toBe(200);
-    const resolvedItem = (resolvedSearchRes.body as any).items[0];
+    const resolvedItem = (resolvedSearchRes.body as any).data.items[0];
     expect(resolvedItem.reference.contentId).toBe('doc-ai-1');
     expect(resolvedItem.canonical.title).toBe('Distributed Enterprise Intelligence');
     expect(resolvedItem.canonical.body).toContain('governed content workflows');

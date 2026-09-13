@@ -4,7 +4,7 @@ import { cms } from '@/lib/cms';
 export const dynamic = 'force-dynamic';
 
 export default async function MediaPage() {
-  const assets = await cms.mediaRepo.list({ limit: 50 });
+  const assets = await cms.mediaService.listAssets({ limit: 50 });
 
   return (
     <div className="flex-1 p-8 bg-canvas overflow-y-auto">

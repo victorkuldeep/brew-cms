@@ -254,8 +254,20 @@ export class DocumentService {
     return doc;
   }
 
-  async listDocuments(filter?: DocumentFilter): Promise<{ items: Document[]; total: number }> {
+  async listDocuments(filter?: DocumentFilter): Promise<{ items: Document[]; total: number; nextCursor?: string }> {
     return this.docRepo.list(filter);
+  }
+
+  /**
+   * Lists revisions for a document through the service boundary (validates
+   * the document exists). Reads stay open; mutations remain policy-gated.
+   */
+  async getRevisions(documentId: string): Promise<Revision[]> {
+    const doc = await this.docRepo.findById(documentId);
+    if (!doc) {
+      throw new NotFoundError('Document', documentId);
+    }
+    return this.revRepo.listByDocumentId(documentId);
   }
 
   async deleteDocument(actor: Actor, id: string): Promise<void> {

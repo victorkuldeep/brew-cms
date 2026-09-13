@@ -1,5 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite';
 import type { AuditEvent, AuditEventRepository } from '@brew-cms/core';
+import { decodeCursor, encodeCursor } from '@brew-cms/core';
 
 export class SQLiteAuditEventRepository implements AuditEventRepository {
   constructor(private readonly db: DatabaseSync) {}
@@ -38,37 +39,57 @@ export class SQLiteAuditEventRepository implements AuditEventRepository {
     eventType?: string;
     limit?: number;
     offset?: number;
-  }): Promise<AuditEvent[]> {
+    cursor?: string;
+  }): Promise<{ items: AuditEvent[]; total: number; nextCursor?: string }> {
     const where: string[] = [];
-    const params: any[] = [];
+    const filterParams: any[] = [];
 
     if (filter?.resourceType) {
       where.push('resource_type = ?');
-      params.push(filter.resourceType);
+      filterParams.push(filter.resourceType);
     }
     if (filter?.resourceId) {
       where.push('resource_id = ?');
-      params.push(filter.resourceId);
+      filterParams.push(filter.resourceId);
     }
     if (filter?.actorId) {
       where.push('actor_id = ?');
-      params.push(filter.actorId);
+      filterParams.push(filter.actorId);
     }
     if (filter?.eventType) {
       where.push('event_type = ?');
-      params.push(filter.eventType);
+      filterParams.push(filter.eventType);
     }
 
-    const whereClause = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
+    const cursorParams: any[] = [];
+    let cursorPredicate = '';
+    if (filter?.cursor) {
+      const { t, id } = decodeCursor(filter.cursor);
+      cursorPredicate = ' AND (created_at < ? OR (created_at = ? AND id < ?))';
+      cursorParams.push(t, t, id);
+    }
+
+    const baseWhere = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
+    const pageWhere = baseWhere ? `${baseWhere}${cursorPredicate}` : cursorPredicate ? `WHERE 1=1${cursorPredicate}` : '';
+    const countRow = this.db.prepare(`SELECT COUNT(*) as total FROM audit_events ${baseWhere}`).get(...filterParams) as any;
+    const total = countRow ? Number(countRow.total) : 0;
+
     const limit = filter?.limit ?? 50;
-    const offset = filter?.offset ?? 0;
+    const offset = filter?.cursor ? 0 : (filter?.offset ?? 0);
 
     const rows = this.db.prepare(`
-      SELECT * FROM audit_events ${whereClause}
-      ORDER BY created_at DESC LIMIT ? OFFSET ?
-    `).all(...params, limit, offset) as any[];
+      SELECT * FROM audit_events ${pageWhere}
+      ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?
+    `).all(...filterParams, ...cursorParams, limit, offset) as any[];
+    const items = rows.map((r) => this.mapRow(r));
 
-    return rows.map((r) => this.mapRow(r));
+    let nextCursor: string | undefined;
+    if (items.length === limit && limit > 0) {
+      const last = items[items.length - 1];
+      nextCursor = encodeCursor({ t: last.createdAt.toISOString(), id: last.id });
+    }
+
+    return { items, total, nextCursor };
   }
 
   private mapRow(row: any): AuditEvent {

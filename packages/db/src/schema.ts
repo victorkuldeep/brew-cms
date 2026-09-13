@@ -229,6 +229,16 @@ export const approvalRequests = sqliteTable('approval_requests', {
   reason: text('reason'),
 });
 
+export const idempotencyRecords = sqliteTable('idempotency_records', {
+  key: text('key').notNull(),
+  actorId: text('actor_id').notNull(),
+  responseStatus: integer('response_status').notNull(),
+  responseBodyJson: text('response_body_json'),
+  expiresAt: text('expires_at').notNull(),
+}, (t) => [
+  primaryKey({ columns: [t.key, t.actorId] }),
+]);
+
 // Webhooks & Redirects
 export const webhookEndpoints = sqliteTable('webhook_endpoints', {
   id: text('id').primaryKey(),

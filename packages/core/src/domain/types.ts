@@ -56,6 +56,11 @@ export interface DocumentFilter {
   query?: string;
   limit?: number;
   offset?: number;
+  /**
+   * Opaque keyset cursor (see pagination.ts). When present, repositories
+   * page from the named row instead of OFFSET — stable under inserts.
+   */
+  cursor?: string;
 }
 
 export interface Revision {

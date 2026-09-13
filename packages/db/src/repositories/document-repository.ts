@@ -4,6 +4,7 @@ import type {
   DocumentFilter,
   DocumentRepository,
 } from '@brew-cms/core';
+import { decodeCursor, encodeCursor } from '@brew-cms/core';
 
 export class SQLiteDocumentRepository implements DocumentRepository {
   constructor(private readonly db: DatabaseSync) {}
@@ -104,40 +105,58 @@ export class SQLiteDocumentRepository implements DocumentRepository {
     this.db.prepare('DELETE FROM documents WHERE id = ?').run(id);
   }
 
-  async list(filter?: DocumentFilter): Promise<{ items: Document[]; total: number }> {
+  async list(filter?: DocumentFilter): Promise<{ items: Document[]; total: number; nextCursor?: string }> {
     const where: string[] = [];
-    const params: any[] = [];
+    const filterParams: any[] = [];
 
     if (filter?.type) {
       where.push('type = ?');
-      params.push(filter.type);
+      filterParams.push(filter.type);
     }
     if (filter?.status) {
       where.push('status = ?');
-      params.push(filter.status);
+      filterParams.push(filter.status);
     }
     if (filter?.authorId) {
       where.push('author_id = ?');
-      params.push(filter.authorId);
+      filterParams.push(filter.authorId);
     }
     if (filter?.query) {
       where.push('(title LIKE ? OR excerpt LIKE ?)');
-      params.push(`%${filter.query}%`, `%${filter.query}%`);
+      filterParams.push(`%${filter.query}%`, `%${filter.query}%`);
     }
 
-    const whereClause = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
-    const countRow = this.db.prepare(`SELECT COUNT(*) as total FROM documents ${whereClause}`).get(...params) as any;
+    // Keyset cursor: (created_at, id) of the last row of the previous page,
+    // matching the DESC ordering. Stable under concurrent inserts.
+    const cursorParams: any[] = [];
+    let cursorPredicate = '';
+    if (filter?.cursor) {
+      const { t, id } = decodeCursor(filter.cursor);
+      cursorPredicate = ' AND (created_at < ? OR (created_at = ? AND id < ?))';
+      cursorParams.push(t, t, id);
+    }
+
+    const baseWhere = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
+    const pageWhere = baseWhere ? `${baseWhere}${cursorPredicate}` : cursorPredicate ? `WHERE 1=1${cursorPredicate}` : '';
+    // Total always describes the whole filtered collection (cursor excluded),
+    // so clients can cache it from page one.
+    const countRow = this.db.prepare(`SELECT COUNT(*) as total FROM documents ${baseWhere}`).get(...filterParams) as any;
     const total = countRow ? Number(countRow.total) : 0;
 
     const limit = filter?.limit ?? 50;
-    const offset = filter?.offset ?? 0;
-    const sql = `SELECT * FROM documents ${whereClause} ORDER BY created_at DESC LIMIT ? OFFSET ?`;
-    const rows = this.db.prepare(sql).all(...params, limit, offset) as any[];
+    const offset = filter?.cursor ? 0 : (filter?.offset ?? 0);
+    const sql = `SELECT * FROM documents ${pageWhere} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`;
+    const rows = this.db.prepare(sql).all(...filterParams, ...cursorParams, limit, offset) as any[];
+    const items = rows.map((r) => this.mapRow(r));
 
-    return {
-      items: rows.map((r) => this.mapRow(r)),
-      total,
-    };
+    // nextCursor only when the page is full (more rows may follow)
+    let nextCursor: string | undefined;
+    if (items.length === limit && limit > 0) {
+      const last = items[items.length - 1];
+      nextCursor = encodeCursor({ t: last.createdAt.toISOString(), id: last.id });
+    }
+
+    return { items, total, nextCursor };
   }
 
   private mapRow(row: any): Document {

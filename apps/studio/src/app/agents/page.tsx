@@ -6,7 +6,8 @@ export const dynamic = 'force-dynamic';
 
 export default async function AgentsPage() {
   const agents = await cms.agentService.listAgents();
-  const runs = await cms.agentRepo.listActionRuns({ limit: 50 });
+  const runsPage = await cms.agentService.listActionRuns({ limit: 50 });
+  const runs = runsPage.items;
 
   const pendingRuns = runs.filter((r) => r.status === 'pending');
   const pastRuns = runs.filter((r) => r.status !== 'pending');

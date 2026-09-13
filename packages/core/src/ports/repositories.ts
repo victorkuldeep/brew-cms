@@ -23,7 +23,7 @@ export interface DocumentRepository {
   create(doc: Omit<Document, 'createdAt' | 'updatedAt'>): Promise<Document>;
   update(id: string, updates: Partial<Document>): Promise<Document>;
   delete(id: string): Promise<void>;
-  list(filter?: DocumentFilter): Promise<{ items: Document[]; total: number }>;
+  list(filter?: DocumentFilter): Promise<{ items: Document[]; total: number; nextCursor?: string }>;
 }
 
 export interface RevisionRepository {
@@ -84,7 +84,8 @@ export interface AuditEventRepository {
     eventType?: string;
     limit?: number;
     offset?: number;
-  }): Promise<AuditEvent[]>;
+    cursor?: string;
+  }): Promise<{ items: AuditEvent[]; total: number; nextCursor?: string }>;
 }
 
 export interface AgentRepository {
@@ -94,7 +95,7 @@ export interface AgentRepository {
   createActionRun(run: Omit<ActionRun, 'startedAt'>): Promise<ActionRun>;
   getActionRunById(id: string): Promise<ActionRun | null>;
   updateActionRun(id: string, updates: Partial<ActionRun>): Promise<ActionRun>;
-  listActionRuns(filter?: { agentId?: string; status?: string; limit?: number }): Promise<ActionRun[]>;
+  listActionRuns(filter?: { agentId?: string; status?: string; limit?: number; cursor?: string }): Promise<{ items: ActionRun[]; total: number; nextCursor?: string }>;
   createApprovalRequest(req: Omit<ApprovalRequest, 'requestedAt'>): Promise<ApprovalRequest>;
   getApprovalRequestByActionRunId(actionRunId: string): Promise<ApprovalRequest | null>;
   updateApprovalRequest(id: string, updates: Partial<ApprovalRequest>): Promise<ApprovalRequest>;

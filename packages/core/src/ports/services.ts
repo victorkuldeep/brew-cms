@@ -8,6 +8,24 @@ export interface IdGenerator {
   generate(prefix?: string): string;
 }
 
+export interface IdempotencyRecord {
+  key: string;
+  actorId: string;
+  responseStatus: number;
+  responseBody: unknown;
+  expiresAt: Date;
+}
+
+/**
+ * Response-replay store for Idempotency-Key handling (Charter §13).
+ * In-memory by default; persistent implementations (e.g. SQLite) swap in
+ * without changing callers. Records are keyed per actor.
+ */
+export interface IdempotencyStore {
+  get(key: string, actorId: string): IdempotencyRecord | null;
+  set(key: string, actorId: string, responseStatus: number, responseBody: unknown, ttlSeconds?: number): void;
+}
+
 export interface EventBus {
   publish(event: {
     type: string;

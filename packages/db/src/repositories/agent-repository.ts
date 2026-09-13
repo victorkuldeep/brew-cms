@@ -5,6 +5,7 @@ import type {
   ApprovalRequest,
   AgentRepository,
 } from '@brew-cms/core';
+import { decodeCursor, encodeCursor } from '@brew-cms/core';
 
 export class SQLiteAgentRepository implements AgentRepository {
   constructor(private readonly db: DatabaseSync) {}
@@ -115,28 +116,47 @@ export class SQLiteAgentRepository implements AgentRepository {
     return (await this.getActionRunById(id))!;
   }
 
-  async listActionRuns(filter?: { agentId?: string; status?: string; limit?: number }): Promise<ActionRun[]> {
+  async listActionRuns(filter?: { agentId?: string; status?: string; limit?: number; cursor?: string }): Promise<{ items: ActionRun[]; total: number; nextCursor?: string }> {
     const where: string[] = [];
-    const params: any[] = [];
+    const filterParams: any[] = [];
 
     if (filter?.agentId) {
       where.push('actor_id = ?');
-      params.push(filter.agentId);
+      filterParams.push(filter.agentId);
     }
     if (filter?.status) {
       where.push('status = ?');
-      params.push(filter.status);
+      filterParams.push(filter.status);
     }
 
-    const whereClause = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
+    const cursorParams: any[] = [];
+    let cursorPredicate = '';
+    if (filter?.cursor) {
+      const { t, id } = decodeCursor(filter.cursor);
+      cursorPredicate = ' AND (started_at < ? OR (started_at = ? AND id < ?))';
+      cursorParams.push(t, t, id);
+    }
+
+    const baseWhere = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
+    const pageWhere = baseWhere ? `${baseWhere}${cursorPredicate}` : cursorPredicate ? `WHERE 1=1${cursorPredicate}` : '';
+    const countRow = this.db.prepare(`SELECT COUNT(*) as total FROM action_runs ${baseWhere}`).get(...filterParams) as any;
+    const total = countRow ? Number(countRow.total) : 0;
+
     const limit = filter?.limit ?? 50;
 
     const rows = this.db.prepare(`
-      SELECT * FROM action_runs ${whereClause}
-      ORDER BY started_at DESC LIMIT ?
-    `).all(...params, limit) as any[];
+      SELECT * FROM action_runs ${pageWhere}
+      ORDER BY started_at DESC, id DESC LIMIT ?
+    `).all(...filterParams, ...cursorParams, limit) as any[];
+    const items = rows.map((r) => this.mapActionRun(r));
 
-    return rows.map((r) => this.mapActionRun(r));
+    let nextCursor: string | undefined;
+    if (items.length === limit && limit > 0) {
+      const last = items[items.length - 1];
+      nextCursor = encodeCursor({ t: last.startedAt.toISOString(), id: last.id });
+    }
+
+    return { items, total, nextCursor };
   }
 
   async createApprovalRequest(req: Omit<ApprovalRequest, 'requestedAt'>): Promise<ApprovalRequest> {

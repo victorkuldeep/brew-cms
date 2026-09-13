@@ -11,7 +11,8 @@ export class AuditService {
     eventType?: string;
     limit?: number;
     offset?: number;
-  }): Promise<AuditEvent[]> {
+    cursor?: string;
+  }): Promise<{ items: AuditEvent[]; total: number; nextCursor?: string }> {
     return this.auditRepo.list(filter);
   }
 }
