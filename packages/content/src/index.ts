@@ -6,3 +6,7 @@ export * from './compiler/metrics.js';
 export * from './compiler/index.js';
 export * from './renderer/html.js';
 export * from './renderer/text.js';
+export * from './templates/types.js';
+export * from './templates/library.js';
+export * from './templates/skeleton.js';
+export * from './templates/validate.js';
